@@ -23,15 +23,16 @@ jobs:
         cache: gradle
 
     - name: Make Gradlew Executable
-      # چون فایل‌ها در ریشه هستند، مستقیم به gradlew دسترسی داریم
-      run: chmod +x gradlew
+      # چون فایل‌ها در پوشه android هستند، پرمیشن را آنجا ست می‌کنیم
+      run: chmod +x android/gradlew
 
-    - name: Build Release APK
-      # دستور بیلد مستقیم اجرا می‌شود
+    - name: Build and Assemble Release APK
+      # وارد پوشه android می‌شویم تا دستور بیلد اجرا شود
+      working-directory: android
       run: ./gradlew assembleRelease
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
         name: NetChecker-Release-APK
-        path: app/build/outputs/apk/release/*.apk
+        path: android/app/build/outputs/apk/release/*.apk
