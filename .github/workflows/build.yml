@@ -1,42 +1,29 @@
-name: Android Production Build
+name: Android CI Build
 
 on:
   push:
-    branches: [ "main" ]
-  workflow_dispatch:
+    branches: [ "main", "master", "develop" ]
+  pull_request:
+    branches: [ "main", "master", "develop" ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-    - name: Checkout Source Code
+    - name: Checkout Repository
       uses: actions/checkout@v4
 
     - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
-        distribution: 'temurin'
         java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
 
-    - name: Build and Locate APK
-      run: |
-        # پیدا کردن مسیرِ پوشه‌ای که gradlew توش هست
-        GRADLEW_PATH=$(find . -name "gradlew" | head -n 1)
-        GRADLEW_DIR=$(dirname "$GRADLEW_PATH")
-        
-        echo "Building in: $GRADLEW_DIR"
-        cd "$GRADLEW_DIR"
-        
-        # اجرای بیلد
-        chmod +x gradlew
-        ./gradlew assembleRelease
-        
-        # پیدا کردن مسیر فایل APK تولید شده
-        APK_PATH=$(find . -name "*.apk" | head -n 1)
-        echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
+    - name: Make Gradlew Executable
+      run: chmod +x android/gradlew
 
-    - name: Upload APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: NetChecker-Release-APK
-        path: ${{ env.APK_PATH }}
+    - name: Build and Assemble Release APK
+      working-directory: android
+      run: ./gradlew assembleRelease
