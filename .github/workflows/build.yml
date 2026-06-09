@@ -23,11 +23,11 @@ jobs:
         cache: gradle
 
     - name: Make Gradlew Executable
-      # چون فایل‌ها در پوشه android هستند، پرمیشن را آنجا ست می‌کنیم
+      # چون الان در ریشه هستی، باید وارد پوشه android بشی تا به فایل دسترسی پیدا کنی
       run: chmod +x android/gradlew
 
     - name: Build and Assemble Release APK
-      # وارد پوشه android می‌شویم تا دستور بیلد اجرا شود
+      # دقیقاً وارد پوشه android میشیم تا gradlew رو اجرا کنیم
       working-directory: android
       run: ./gradlew assembleRelease
 
