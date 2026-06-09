@@ -18,9 +18,10 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Grant Execute Permission and Build
-      # با استفاده از cd وارد پوشه android می‌شویم تا gradlew پیدا شود
+    - name: Build Project
+      # تمام دستورات در یک خط اجرا می‌شوند تا context پوشه حفظ شود
       run: |
+        ls -R  # این دستور را اضافه کردیم تا لیست دقیق پوشه‌ها را در لاگ ببینیم و مطمئن شویم gradlew کجاست
         cd android
         chmod +x gradlew
         ./gradlew assembleRelease
@@ -29,5 +30,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: NetChecker-Release-APK
-        # مسیر فایل خروجی را با توجه به پوشه android تنظیم کردیم
         path: android/app/build/outputs/apk/release/*.apk
