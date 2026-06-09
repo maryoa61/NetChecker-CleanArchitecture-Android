@@ -18,16 +18,26 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Build Project
-      # تمام دستورات در یک خط اجرا می‌شوند تا context پوشه حفظ شود
+    - name: Find and Build
       run: |
-        ls -R  # این دستور را اضافه کردیم تا لیست دقیق پوشه‌ها را در لاگ ببینیم و مطمئن شویم gradlew کجاست
-        cd android
+        # پیدا کردنِ پوشه‌ای که فایل gradlew توش قرار داره
+        GRADLEW_PATH=$(find . -name "gradlew" | head -n 1)
+        GRADLEW_DIR=$(dirname "$GRADLEW_PATH")
+        
+        echo "Found gradlew at: $GRADLEW_PATH"
+        
+        # رفتن به همون پوشه
+        cd "$GRADLEW_DIR"
+        
+        # دادن دسترسی و اجرا
         chmod +x gradlew
         ./gradlew assembleRelease
+        
+        # ذخیره کردن مسیرِ خروجی برای مرحله بعد
+        echo "BUILD_DIR=$GRADLEW_DIR" >> $GITHUB_ENV
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: NetChecker-Release-APK
-        path: android/app/build/outputs/apk/release/*.apk
+        path: "**/app/build/outputs/apk/release/*.apk"
