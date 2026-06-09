@@ -1,0 +1,6 @@
+{
+  "name": "NetChecker & IP Scanner",
+  "description": "A full-stack network diagnostics utility and Cloudflare IP scanner simulator, providing a fully exportable native Android application template structured with Clean Architecture, Room Database, and Kotlin Coroutines.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
