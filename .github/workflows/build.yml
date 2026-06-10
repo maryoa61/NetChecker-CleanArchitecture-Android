@@ -1,7 +1,5 @@
-    - name: Upload APK Artifact
+    - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: NetChecker-Release-APK
-        path: |
-          **/*.apk
-          !**/build/**/outputs/apk/debug/*.apk
+        name: NetChecker-APK
+        path: android/app/build/outputs/apk/**/*.apk
