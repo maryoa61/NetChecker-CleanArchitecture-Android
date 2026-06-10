@@ -9,7 +9,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      # این خط دقیقاً همون چیزیه که گیت‌هاب برای Node 24 میخواد
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout Repository
@@ -25,11 +24,11 @@ jobs:
       - name: Make Gradlew Executable
         run: chmod +x android/gradlew
 
-      - name: Build and Assemble Release APK
-        working-directory: android
-        run: ./gradlew :app:assembleRelease
+      - name: Build Release APK
+        # این بار مسیر رو مستقیم توی دستور دادیم تا شک نکنه
+        run: ./android/gradlew -p android assembleRelease
 
-      - name: Upload APK Artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: NetChecker-APK
