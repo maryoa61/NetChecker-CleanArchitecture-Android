@@ -1,4 +1,9 @@
-    - name: Upload APK
+    - name: Build and Assemble Release APK
+      working-directory: android
+      # مستقیماً و با نام کامل تسک صداش می‌زنیم
+      run: ./gradlew :app:assembleRelease 
+
+    - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
         name: NetChecker-APK
