@@ -22,14 +22,16 @@ jobs:
           cache: gradle
 
       - name: Make Gradlew Executable
-        run: chmod +x android/gradlew
+        # چون فایل‌ها در ریشه هستند، نیازی به پوشه android/ نیست
+        run: chmod +x gradlew
 
       - name: Build Release APK
-        # این بار مسیر رو مستقیم توی دستور دادیم تا شک نکنه
-        run: ./android/gradlew -p android assembleRelease
+        # دستور بیلد رو مستقیم در ریشه اجرا می‌کنیم
+        run: ./gradlew assembleRelease
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: NetChecker-APK
-          path: android/app/build/outputs/apk/**/*.apk
+          # مسیر خروجی فایل‌های APK
+          path: app/build/outputs/apk/**/*.apk
