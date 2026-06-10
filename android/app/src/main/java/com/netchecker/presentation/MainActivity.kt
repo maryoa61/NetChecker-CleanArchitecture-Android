@@ -9,6 +9,7 @@ import com.netchecker.data.database.NetCheckerDatabase
 import com.netchecker.domain.usecase.CloudflareScannerUseCase
 import com.netchecker.domain.usecase.PingUseCase
 import com.netchecker.domain.usecase.ProxyOptimizerUseCase
+import com.netchecker.domain.usecase.ConfigLatencyTesterUseCase
 
 /**
  * Main Android Entrance Activity.
@@ -28,6 +29,7 @@ class MainActivity : ComponentActivity() {
         val pingUseCase = PingUseCase()
         val proxyOptimizerUseCase = ProxyOptimizerUseCase(database.cleanIpDao(), database.proxyConfigDao())
         val batchTestConfigsUseCase = com.netchecker.domain.usecase.BatchTestConfigsUseCase(database.proxyConfigDao())
+        val configLatencyTesterUseCase = ConfigLatencyTesterUseCase()
 
         // Create presentation state machine
         val viewModel = NetCheckerViewModel(
@@ -36,7 +38,8 @@ class MainActivity : ComponentActivity() {
             scannerUseCase = scannerUseCase,
             pingUseCase = pingUseCase,
             proxyOptimizerUseCase = proxyOptimizerUseCase,
-            batchTestConfigsUseCase = batchTestConfigsUseCase
+            batchTestConfigsUseCase = batchTestConfigsUseCase,
+            configLatencyTesterUseCase = configLatencyTesterUseCase
         )
 
         setContent {

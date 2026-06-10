@@ -36,9 +36,11 @@ import com.netchecker.data.database.ProxyConfigDao
 import com.netchecker.data.database.ProxyConfigEntity
 import com.netchecker.domain.usecase.CloudflareScannerUseCase
 import com.netchecker.domain.usecase.PingUseCase
+import com.netchecker.domain.ConfigFactory
 import com.netchecker.domain.usecase.ProxyOptimizerUseCase
 import com.netchecker.domain.usecase.BatchTestConfigsUseCase
 import com.netchecker.domain.usecase.ExportProxiesUseCase
+import com.netchecker.domain.usecase.ConfigLatencyTesterUseCase
 import com.netchecker.domain.usecase.ExportProxiesUseCase.ExportFormat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -91,7 +93,11 @@ data class ScanUiState(
     val exportFormat: ExportFormat = ExportFormat.V2RAY_OUTBOUNDS,
     val exportFormatName: String = "",
     val exportFilterLowLoss: Boolean = false,
-    val exportFilterLowLatency: Boolean = false
+    val exportFilterLowLatency: Boolean = false,
+
+    val showV2rayNGDialog: Boolean = false,
+    val v2rayNGInstalled: Boolean = false,
+    val v2rayNGConfigText: String = ""
 )
 
 enum class DashboardTab {
@@ -104,7 +110,8 @@ class NetCheckerViewModel(
     private val scannerUseCase: CloudflareScannerUseCase,
     private val pingUseCase: PingUseCase,
     private val proxyOptimizerUseCase: ProxyOptimizerUseCase,
-    private val batchTestConfigsUseCase: BatchTestConfigsUseCase
+    private val batchTestConfigsUseCase: BatchTestConfigsUseCase,
+    private val configLatencyTesterUseCase: ConfigLatencyTesterUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ScanUiState())
@@ -307,8 +314,9 @@ class NetCheckerViewModel(
 
     fun pingProxy(proxy: ProxyConfigEntity) {
         viewModelScope.launch {
-            // Check latency against gateway URL extracted or custom endpoint
-            val (success, ping) = pingUseCase.execute("https://1.1.1.1")
+            // Check latency by launching light HTTP/TCP connections via the new tester usecase
+            val ping = configLatencyTesterUseCase.execute(proxy.rawConfig)
+            val success = ping > 0
             val updated = proxy.copy(currentPing = ping, isWorking = success)
             proxyConfigDao.updateProxy(updated)
         }
@@ -380,10 +388,37 @@ class NetCheckerViewModel(
             cleanIpDao.clearAllCleanIps()
         }
     }
+
+    fun generateConfigsForIps(ips: List<String>, subscriptionUrl: String?): List<String> {
+        return ConfigFactory.generateConfigsForIps(ips, subscriptionUrl)
+    }
+
+    fun showV2rayNGExport(context: android.content.Context, workingConfigs: List<ProxyConfigEntity>) {
+        val workingOnly = workingConfigs.filter { it.isWorking }
+        val formattedConfigs = workingOnly.joinToString("\n") { it.rawConfig }
+        val isInstalled = try {
+            context.packageManager.getPackageInfo("com.v2ray.ang", 0)
+            true
+        } catch (e: Exception) {
+            false
+        }
+        _uiState.update {
+            it.copy(
+                v2rayNGInstalled = isInstalled,
+                v2rayNGConfigText = formattedConfigs,
+                showV2rayNGDialog = true
+            )
+        }
+    }
+
+    fun dismissV2rayNGDialog() {
+        _uiState.update { it.copy(showV2rayNGDialog = false) }
+    }
 }
 
 @Composable
 fun CyberpunkDashboard(viewModel: NetCheckerViewModel) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val state by viewModel.uiState.collectAsState()
     val cleanIps by viewModel.cleanIpsFlow.collectAsState(initial = emptyList())
     val proxies by viewModel.proxiesFlow.collectAsState(initial = emptyList())
@@ -455,7 +490,8 @@ fun CyberpunkDashboard(viewModel: NetCheckerViewModel) {
                             selectedOperator = state.selectedOperator,
                             sortByPing = state.sortByPing,
                             onToggleOperator = { viewModel.toggleOperatorFilter(it) },
-                            onToggleSortByPing = { viewModel.toggleSortByPing(it) }
+                            onToggleSortByPing = { viewModel.toggleSortByPing(it) },
+                            onGenerateConfigs = { ips, url -> viewModel.generateConfigsForIps(ips, url) }
                         )
                     }
                     DashboardTab.PROXIES -> {
@@ -478,7 +514,9 @@ fun CyberpunkDashboard(viewModel: NetCheckerViewModel) {
                             onToggleExportFilterLoss = { viewModel.toggleExportFilterLowLoss() },
                             onToggleExportFilterLatency = { viewModel.toggleExportFilterLowLatency() },
                             onSelectProxy = { viewModel.setSelectedProxyId(it) },
-                            onRunThroughputTest = { id, rtt, working -> viewModel.runThroughputTest(id, rtt, working) }
+                            onRunThroughputTest = { id, rtt, working -> viewModel.runThroughputTest(id, rtt, working) },
+                            onShowV2rayNGExport = { viewModel.showV2rayNGExport(context, proxies) },
+                            onDismissV2rayNGExport = { viewModel.dismissV2rayNGDialog() }
                         )
                     }
                 }
@@ -538,8 +576,15 @@ fun ScannerSection(
     sortByPing: Boolean,
     onToggleOperator: (String) -> Unit,
     onToggleSortByPing: (Boolean) -> Unit,
+    onGenerateConfigs: (List<String>, String?) -> List<String>,
     modifier: Modifier = Modifier
 ) {
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+    var showExportDialog by remember { mutableStateOf(false) }
+    var subscriptionUrlInput by remember { mutableStateOf("") }
+    var copyNotice by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -662,14 +707,27 @@ fun ScannerSection(
             fontFamily = FontFamily.Monospace
         )
         if (cleanIps.isNotEmpty()) {
-            Text(
-                text = "[CLEAR ALL]",
-                color = NeonPink,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace,
-                modifier = Modifier.clickable { onClearIps() }
-            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "[EXPORT IPS]",
+                    color = NeonAqua,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.clickable { showExportDialog = true }
+                )
+                Text(
+                    text = "[CLEAR ALL]",
+                    color = NeonPink,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.clickable { onClearIps() }
+                )
+            }
         }
     }
 
@@ -805,8 +863,173 @@ fun ScannerSection(
                     }
                 }
             }
+
+            // Floating Action Button overlaid at the bottom right of the IP list box
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(16.dp)
+            ) {
+                FloatingActionButton(
+                    onClick = { showExportDialog = true },
+                    containerColor = NeonAqua,
+                    contentColor = DarkBackground,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .size(50.dp)
+                        .border(1.dp, NeonAqua, RoundedCornerShape(8.dp))
+                ) {
+                    Icon(
+                        imageVector = androidx.compose.material.icons.Icons.Default.Share,
+                        contentDescription = "Export Radar IPs",
+                        modifier = Modifier.size(20.dp),
+                        tint = DarkBackground
+                    )
+                }
+            }
         }
     }
+    }
+
+    // Config Generator & Export Dialog
+    if (showExportDialog) {
+        AlertDialog(
+            onDismissRequest = { showExportDialog = false },
+            title = {
+                Text(
+                    text = "EXPORT IP RADAR TARGETS",
+                    color = NeonAqua,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    style = TextStyle(shadow = Shadow(color = NeonAqua, blurRadius = 8f))
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "Total targets to export: ${cleanIps.size} verified IPs.",
+                        color = Color.LightGray,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    
+                    Text(
+                        text = "Optional Subscription URL / Host / SNI:",
+                        color = Color.Gray,
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+
+                    OutlinedTextField(
+                        value = subscriptionUrlInput,
+                        onValueChange = { subscriptionUrlInput = it },
+                        placeholder = { Text("e.g. sub.example.com / custom-app", color = Color.DarkGray, fontSize = 10.sp) },
+                        textStyle = TextStyle(color = Color.White, fontFamily = FontFamily.Monospace, fontSize = 11.sp),
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            unfocusedBorderColor = BorderCyan,
+                            focusedBorderColor = NeonAqua,
+                            unfocusedContainerColor = Color(0xFF0C0D14),
+                            focusedContainerColor = Color(0xFF0C0D14)
+                        ),
+                        singleLine = true
+                    )
+
+                    if (copyNotice.isNotEmpty()) {
+                        Text(
+                            text = ">>> $copyNotice",
+                            color = NeonLime,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                val rawText = cleanIps.joinToString(separator = "\n") { it.ipAddress }
+                                clipboardManager.safeCopy(rawText) {
+                                    scope.launch {
+                                        copyNotice = "COPIED RAW IP LIST!"
+                                        delay(1500)
+                                        copyNotice = ""
+                                    }
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = NeonPink),
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                "COPY RAW IPS",
+                                fontFamily = FontFamily.Monospace,
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Button(
+                            onClick = {
+                                val ipsList = cleanIps.map { it.ipAddress }
+                                val subUrl = if (subscriptionUrlInput.isNotBlank()) subscriptionUrlInput.trim() else null
+                                val configs = onGenerateConfigs(ipsList, subUrl)
+                                val combinedConfigs = configs.joinToString(separator = "\n")
+                                clipboardManager.safeCopy(combinedConfigs) {
+                                    scope.launch {
+                                        copyNotice = "COPIED SYSTEM CONFIGS!"
+                                        delay(1500)
+                                        copyNotice = ""
+                                    }
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = NeonAqua),
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                "GENERATE CONFIGS",
+                                fontFamily = FontFamily.Monospace,
+                                color = Color.Black,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    Button(
+                        onClick = { showExportDialog = false },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
+                        Text(
+                            "CLOSE WINDOW",
+                            fontFamily = FontFamily.Monospace,
+                            color = Color.White,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+            },
+            containerColor = ObsidianGray,
+            shape = RoundedCornerShape(4.dp),
+            modifier = Modifier.border(1.dp, NeonPink, RoundedCornerShape(4.dp))
+        )
     }
 }
 
@@ -830,6 +1053,8 @@ fun ProxiesSection(
     onToggleExportFilterLatency: () -> Unit,
     onSelectProxy: (Int?) -> Unit,
     onRunThroughputTest: (Int, Long, Boolean) -> Unit,
+    onShowV2rayNGExport: () -> Unit,
+    onDismissV2rayNGExport: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
@@ -1024,6 +1249,23 @@ fun ProxiesSection(
                 )
             }
 
+            Box(
+                modifier = Modifier
+                    .border(1.dp, if (workingCount > 0) NeonLime else Color.Gray.copy(alpha = 0.5f), RoundedCornerShape(2.dp))
+                    .clickable(enabled = workingCount > 0) {
+                        onShowV2rayNGExport()
+                    }
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = "V2RAYNG",
+                    color = if (workingCount > 0) NeonLime else Color.Gray,
+                    fontSize = 8.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
             Spacer(modifier = Modifier.weight(1f))
 
             Text(
@@ -1145,6 +1387,173 @@ fun ProxiesSection(
                 containerColor = ObsidianGray,
                 shape = RoundedCornerShape(4.dp),
                 modifier = Modifier.border(1.dp, NeonPink, RoundedCornerShape(4.dp))
+            )
+        }
+
+        if (state.showV2rayNGDialog) {
+            val context = androidx.compose.ui.platform.LocalContext.current
+            AlertDialog(
+                onDismissRequest = { onDismissV2rayNGExport() },
+                title = {
+                    Text(
+                        text = "V2RAYNG CLIENT GATEWAY SYNC",
+                        color = NeonAqua,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (state.v2rayNGInstalled) {
+                            Text(
+                                text = "V2RAYNG DETECTED // PROTOCOL ACTIVE\nGenerate standard v2rayNG deep-linking intents or sync via system clipboard.",
+                                color = NeonLime,
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        } else {
+                            Text(
+                                text = "V2RAYNG MISSING // ACTION REQUIRED\nv2rayNG application is not currently installed. Go to Play Store to install, or copy configs to the clipboard for manual integration.",
+                                color = NeonPink,
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+
+                        OutlinedTextField(
+                            value = state.v2rayNGConfigText,
+                            onValueChange = {},
+                            readOnly = true,
+                            textStyle = TextStyle(color = Color.White, fontFamily = FontFamily.Monospace, fontSize = 9.sp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(140.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                unfocusedBorderColor = BorderCyan,
+                                focusedBorderColor = NeonAqua,
+                                unfocusedContainerColor = Color(0xFF020202),
+                                focusedContainerColor = Color(0xFF020202)
+                            )
+                        )
+                    }
+                },
+                confirmButton = {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (state.v2rayNGInstalled) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(
+                                    onClick = {
+                                        // Standard clipboard copy and run launch Intent
+                                        clipboardManager.setText(AnnotatedString(state.v2rayNGConfigText))
+                                        val intent = context.packageManager.getLaunchIntentForPackage("com.v2ray.ang")
+                                        if (intent != null) {
+                                            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                            context.startActivity(intent)
+                                        }
+                                        onDismissV2rayNGExport()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = NeonLime),
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text("LAUNCH & IMPORT", fontFamily = FontFamily.Monospace, color = Color.Black, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                }
+
+                                Button(
+                                    onClick = {
+                                        val encodedText = java.net.URLEncoder.encode(state.v2rayNGConfigText, "UTF-8")
+                                        val deepLinkUri = android.net.Uri.parse("v2rayng://install-config?url=$encodedText")
+                                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, deepLinkUri).apply {
+                                            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        }
+                                        try {
+                                            context.startActivity(intent)
+                                        } catch (e: Exception) {
+                                            clipboardManager.setText(AnnotatedString(state.v2rayNGConfigText))
+                                            val launchIntent = context.packageManager.getLaunchIntentForPackage("com.v2ray.ang")
+                                            if (launchIntent != null) {
+                                                context.startActivity(launchIntent)
+                                            }
+                                        }
+                                        onDismissV2rayNGExport()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = NeonAqua),
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text("DEEP-LINK SYNC", fontFamily = FontFamily.Monospace, color = Color.Black, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        } else {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(
+                                    onClick = {
+                                        try {
+                                            val playStoreIntent = android.content.Intent(
+                                                android.content.Intent.ACTION_VIEW,
+                                                android.net.Uri.parse("market://details?id=com.v2ray.ang")
+                                            ).apply {
+                                                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                            }
+                                            context.startActivity(playStoreIntent)
+                                        } catch (e: Exception) {
+                                            val browserIntent = android.content.Intent(
+                                                android.content.Intent.ACTION_VIEW,
+                                                android.net.Uri.parse("https://play.google.com/store/apps/details?id=com.v2ray.ang")
+                                            ).apply {
+                                                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                            }
+                                            context.startActivity(browserIntent)
+                                        }
+                                        onDismissV2rayNGExport()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = NeonPink),
+                                    modifier = Modifier.weight(1.5f),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text("GET ON PLAY STORE", fontFamily = FontFamily.Monospace, color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                }
+
+                                Button(
+                                    onClick = {
+                                        clipboardManager.setText(AnnotatedString(state.v2rayNGConfigText))
+                                        onDismissV2rayNGExport()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = NeonAqua),
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text("COPY RAW", fontFamily = FontFamily.Monospace, color = Color.Black, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+
+                        Button(
+                            onClick = { onDismissV2rayNGExport() },
+                            colors = ButtonDefaults.buttonColors(containerColor = ObsidianGray),
+                            modifier = Modifier.fillMaxWidth().border(1.dp, Color.Gray.copy(alpha = 0.4f), RoundedCornerShape(4.dp)),
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text("ABORT SYNC", fontFamily = FontFamily.Monospace, color = Color.Gray, fontSize = 9.sp)
+                        }
+                    }
+                },
+                containerColor = ObsidianGray,
+                shape = RoundedCornerShape(4.dp),
+                modifier = Modifier.border(1.dp, NeonAqua, RoundedCornerShape(4.dp))
             )
         }
 
@@ -1523,5 +1932,16 @@ fun TabButton(label: String, isSelected: Boolean, modifier: Modifier, onClick: (
                 Box(modifier = Modifier.size(20.dp, 2.dp).background(NeonAqua))
             }
         }
+    }
+}
+
+fun androidx.compose.ui.platform.ClipboardManager.safeCopy(text: String, onCopied: () -> Unit = {}) {
+    try {
+        if (text.isNotEmpty()) {
+            this.setText(androidx.compose.ui.text.AnnotatedString(text))
+            onCopied()
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
     }
 }

@@ -26,19 +26,24 @@ jobs:
         cache: gradle
 
     - name: Make Gradlew Executable
+      # Since the root workspace hosts the full-stack setup, chmod the gradlew executable inside the android subdirectory
       run: chmod +x android/gradlew
 
-    - name: Build and Assemble APKs (Debug and Release)
+    - name: Clean and Build APKs (Debug and Release)
       working-directory: android
-      run: ./gradlew assembleDebug assembleRelease
+      run: ./gradlew clean assembleDebug assembleRelease
 
     - name: List Build Outputs (Diagnostics)
+      if: always()
       run: |
-        echo "=== Listing all files in android/app/build/outputs ==="
-        find android/app/build/outputs -type f || echo "No files/directory found"
+        echo "=== Listing all files in android/app/build ==="
+        find android/app/build -type f 2>/dev/null || echo "No files found in build/"
+        echo "=== Listing all files under android/app/build/outputs ==="
+        find android/app/build/outputs -type f 2>/dev/null || echo "No files found in outputs/"
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
         name: NetChecker-APKs
         path: android/app/build/outputs/apk/**/*.apk
+
