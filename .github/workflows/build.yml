@@ -44,3 +44,4 @@ jobs:
       with:
         name: NetChecker-APKs
         path: android/app/build/outputs/apk/**/*.apk
+
