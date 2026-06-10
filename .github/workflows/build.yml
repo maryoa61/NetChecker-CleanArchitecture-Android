@@ -26,11 +26,9 @@ jobs:
         cache: gradle
 
     - name: Make Gradlew Executable
-      # چون الان در ریشه هستی، باید وارد پوشه android بشی تا به فایل دسترسی پیدا کنی
       run: chmod +x android/gradlew
 
     - name: Build and Assemble APKs (Debug and Release)
-      # دقیقاً وارد پوشه android میشیم تا gradlew رو اجرا کنیم
       working-directory: android
       run: ./gradlew assembleDebug assembleRelease
 
@@ -44,4 +42,3 @@ jobs:
       with:
         name: NetChecker-APKs
         path: android/app/build/outputs/apk/**/*.apk
-
