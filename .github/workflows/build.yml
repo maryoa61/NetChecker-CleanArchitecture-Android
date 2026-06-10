@@ -1,38 +1,7 @@
-name: Android CI Build
-
-on:
-  push:
-    branches: [ "main", "master", "develop" ]
-  pull_request:
-    branches: [ "main", "master", "develop" ]
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
-
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-        cache: gradle
-
-    - name: Make Gradlew Executable
-      # چون الان در ریشه هستی، باید وارد پوشه android بشی تا به فایل دسترسی پیدا کنی
-      run: chmod +x android/gradlew
-
-    - name: Build and Assemble Release APK
-      # دقیقاً وارد پوشه android میشیم تا gradlew رو اجرا کنیم
-      working-directory: android
-      run: ./gradlew assembleRelease
-
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
         name: NetChecker-Release-APK
-        path: android/app/build/outputs/apk/release/*.apk
+        path: |
+          **/*.apk
+          !**/build/**/outputs/apk/debug/*.apk
