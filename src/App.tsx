@@ -484,19 +484,6 @@ export default function App() {
     updateSavedIps([]);
   };
 
-  const handleExportIpsJson = () => {
-    if (savedIps.length === 0) return;
-    const jsonString = `data:text/json;charset=utf-8,${encodeURIComponent(
-      JSON.stringify(savedIps, null, 2)
-    )}`;
-    const downloadAnchor = document.createElement("a");
-    downloadAnchor.setAttribute("href", jsonString);
-    downloadAnchor.setAttribute("download", `verified_ips_backup_${Date.now()}.json`);
-    document.body.appendChild(downloadAnchor);
-    downloadAnchor.click();
-    downloadAnchor.remove();
-  };
-
   // Add Custom Proxy Config with native-like parser & link generator optimization
   const handleAddProxy = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1126,23 +1113,12 @@ export default function App() {
             </div>
           </div>
 
-          <div className="p-4 bg-[#050505] border-l-4 border-l-[#00f2ff] border border-[#00f2ff]/20 rounded-none flex items-center justify-between gap-3.5 shadow-sm">
-            <div className="flex items-center gap-3.5">
-              <Database className="text-[#00f2ff] w-5 h-5 flex-shrink-0" id="stat-db-icon" />
-              <div>
-                <p className="text-[10px] text-gray-500 font-mono tracking-widest uppercase">ROOM DATABASE</p>
-                <h3 className="text-xs font-bold font-mono text-white tracking-widest uppercase mt-0.5">{savedIps.length} IPS VERIFIED</h3>
-              </div>
+          <div className="p-4 bg-[#050505] border-l-4 border-l-[#00f2ff] border border-[#00f2ff]/20 rounded-none flex items-center gap-3.5 shadow-sm">
+            <Database className="text-[#00f2ff] w-5 h-5 flex-shrink-0" id="stat-db-icon" />
+            <div>
+              <p className="text-[10px] text-gray-500 font-mono tracking-widest uppercase">ROOM DATABASE</p>
+              <h3 className="text-xs font-bold font-mono text-white tracking-widest uppercase mt-0.5">{savedIps.length} IPS VERIFIED</h3>
             </div>
-            {savedIps.length > 0 && (
-              <button
-                onClick={handleExportIpsJson}
-                className="px-2 py-1 text-[8.5px] font-mono border border-[#00f2ff]/40 bg-[#00f2ff]/10 hover:bg-[#00f2ff]/20 text-[#00f2ff] transition-all duration-150 rounded-none tracking-wider uppercase cursor-pointer"
-                title="Backup Verified IP database as JSON"
-              >
-                [BACKUP JSON]
-              </button>
-            )}
           </div>
 
           <div className="p-4 bg-[#050505] border-l-4 border-l-[#00f2ff] border border-[#00f2ff]/20 rounded-none flex items-center gap-3.5 shadow-sm">
@@ -1314,21 +1290,12 @@ export default function App() {
                       <div className="flex justify-between items-center text-[9px] mt-1">
                         <span className="text-[#00f2ff] font-bold tracking-widest uppercase">VERIFIED CLEAN IPS (ROOM)</span>
                         {savedIps.length > 0 && (
-                          <div className="flex items-center gap-2">
-                            <button 
-                               onClick={handleExportIpsJson}
-                               className="text-[#00f2ff] hover:underline font-bold transition-all text-[8px] tracking-widest cursor-pointer"
-                            >
-                              [EXPORT JSON]
-                            </button>
-                            <span className="text-gray-700">|</span>
-                            <button 
-                               onClick={handleClearAllIps}
-                               className="text-[#ff00ff] hover:underline font-bold transition-all text-[8px] tracking-widest cursor-pointer"
-                            >
-                              [WIPE ALL]
-                            </button>
-                          </div>
+                          <button 
+                             onClick={handleClearAllIps}
+                             className="text-[#ff00ff] hover:underline font-bold transition-all text-[8px] tracking-widest cursor-pointer"
+                          >
+                            [WIPE ALL]
+                          </button>
                         )}
                       </div>
 

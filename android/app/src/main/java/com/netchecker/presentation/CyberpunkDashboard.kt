@@ -91,10 +91,7 @@ data class ScanUiState(
     val exportFormat: ExportFormat = ExportFormat.V2RAY_OUTBOUNDS,
     val exportFormatName: String = "",
     val exportFilterLowLoss: Boolean = false,
-    val exportFilterLowLatency: Boolean = false,
-
-    val showIpBackupDialog: Boolean = false,
-    val ipBackupText: String = ""
+    val exportFilterLowLatency: Boolean = false
 )
 
 enum class DashboardTab {
@@ -210,30 +207,6 @@ class NetCheckerViewModel(
 
     fun toggleExportFilterLowLatency() {
         _uiState.update { it.copy(exportFilterLowLatency = !it.exportFilterLowLatency) }
-    }
-
-    fun showIpBackupDialog(ips: List<CleanIpEntity>) {
-        val jsonBuilder = StringBuilder()
-        jsonBuilder.append("[\n")
-        ips.forEachIndexed { index, entity ->
-            jsonBuilder.append("  {\n")
-            jsonBuilder.append("    \"ipAddress\": \"${entity.ipAddress}\",\n")
-            jsonBuilder.append("    \"pingMs\": ${entity.pingMs},\n")
-            jsonBuilder.append("    \"lastChecked\": ${entity.lastChecked},\n")
-            jsonBuilder.append("    \"operatorType\": \"${entity.operatorType}\"\n")
-            jsonBuilder.append(if (index < ips.lastIndex) "  },\n" else "  }\n")
-        }
-        jsonBuilder.append("]")
-        _uiState.update {
-            it.copy(
-                showIpBackupDialog = true,
-                ipBackupText = jsonBuilder.toString()
-            )
-        }
-    }
-
-    fun dismissIpBackupDialog() {
-        _uiState.update { it.copy(showIpBackupDialog = false) }
     }
 
     fun startBatchProxyTesting() {
@@ -479,7 +452,6 @@ fun CyberpunkDashboard(viewModel: NetCheckerViewModel) {
                             onStartScan = { viewModel.startIpScanning() },
                             onDeleteIp = { viewModel.deleteCleanIp(it) },
                             onClearIps = { viewModel.clearAllCleanIps() },
-                            onBackupIps = { viewModel.showIpBackupDialog(cleanIps) },
                             selectedOperator = state.selectedOperator,
                             sortByPing = state.sortByPing,
                             onToggleOperator = { viewModel.toggleOperatorFilter(it) },
@@ -511,73 +483,6 @@ fun CyberpunkDashboard(viewModel: NetCheckerViewModel) {
                     }
                 }
             }
-        }
-        if (state.showIpBackupDialog) {
-            AlertDialog(
-                onDismissRequest = { viewModel.dismissIpBackupDialog() },
-                title = {
-                    Text(
-                        text = "IP DATABASE BACKUP",
-                        color = NeonAqua,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                },
-                text = {
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = "Formatted JSON backup of room database. Copy to clipboard to save.",
-                            color = Color.Gray,
-                            fontSize = 9.sp,
-                            fontFamily = FontFamily.Monospace
-                        )
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(150.dp)
-                                .border(1.dp, BorderCyan, RoundedCornerShape(4.dp))
-                                .background(Color.Black)
-                                .padding(8.dp)
-                        ) {
-                            androidx.compose.foundation.lazy.LazyColumn {
-                                item {
-                                    Text(
-                                        text = state.ipBackupText,
-                                        color = Color.LightGray,
-                                        fontSize = 8.sp,
-                                        fontFamily = FontFamily.Monospace
-                                    )
-                                }
-                            }
-                        }
-                    }
-                },
-                confirmButton = {
-                    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Button(
-                            onClick = {
-                                clipboard.setText(androidx.compose.ui.text.AnnotatedString(state.ipBackupText))
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = NeonAqua)
-                        ) {
-                            Text("COPY BACKUP", fontFamily = FontFamily.Monospace, color = Color.White, fontSize = 10.sp)
-                        }
-                        Button(
-                            onClick = { viewModel.dismissIpBackupDialog() },
-                            colors = ButtonDefaults.buttonColors(containerColor = NeonPink)
-                        ) {
-                            Text("CLOSE", fontFamily = FontFamily.Monospace, color = Color.White, fontSize = 10.sp)
-                        }
-                    }
-                }
-            )
         }
     }
 }
@@ -629,7 +534,6 @@ fun ScannerSection(
     onStartScan: () -> Unit,
     onDeleteIp: (String) -> Unit,
     onClearIps: () -> Unit,
-    onBackupIps: () -> Unit,
     selectedOperator: String,
     sortByPing: Boolean,
     onToggleOperator: (String) -> Unit,
@@ -758,24 +662,14 @@ fun ScannerSection(
             fontFamily = FontFamily.Monospace
         )
         if (cleanIps.isNotEmpty()) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = "[BACKUP JSON]",
-                    color = NeonAqua,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace,
-                    modifier = Modifier.clickable { onBackupIps() }
-                )
-                Text(
-                    text = "[CLEAR ALL]",
-                    color = NeonPink,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace,
-                    modifier = Modifier.clickable { onClearIps() }
-                )
-            }
+            Text(
+                text = "[CLEAR ALL]",
+                color = NeonPink,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.clickable { onClearIps() }
+            )
         }
     }
 
