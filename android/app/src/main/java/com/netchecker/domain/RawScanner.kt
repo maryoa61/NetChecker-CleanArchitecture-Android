@@ -7,6 +7,7 @@ import java.net.InetSocketAddress
 import java.net.Socket
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
+import javax.net.ssl.SNIHostName
 
 /**
  * Result data class for RawScanner representing the outcome of scanning a single IP.
@@ -40,19 +41,25 @@ class RawScanner {
                 var socket: Socket? = null
                 var sslSocket: SSLSocket? = null
                 try {
-                    // Step 1: Create a raw TCP socket and connect to the port
+                    // ۱. ابتدا سوکتِ خام را بساز
                     socket = Socket()
-                    socket.connect(InetSocketAddress(ip, port), 1500)
+                    socket.connect(InetSocketAddress(ip, port), 3000)
                     
-                    // Step 2: Layer SSL/TLS on top of the established TCP connection
+                    // ۲. سوکت را ارتقا بده (بدونِ شروعِ Handshake بلافاصله)
                     val sslSocketFactory = SSLSocketFactory.getDefault() as SSLSocketFactory
-                    sslSocket = sslSocketFactory.createSocket(socket, ip, port, true) as SSLSocket
+                    val upgradedSslSocket = sslSocketFactory.createSocket(socket, ip, port, true) as SSLSocket
+                    sslSocket = upgradedSslSocket
+                    
+                    // ۳. پارامترها (SNI) را اینجا تنظیم کن
+                    val parameters = upgradedSslSocket.sslParameters
+                    parameters.serverNames = listOf(SNIHostName("cloudflare.com"))
+                    upgradedSslSocket.sslParameters = parameters
                     
                     // Configure timeouts for the TLS socket
-                    sslSocket.soTimeout = 1500
+                    upgradedSslSocket.soTimeout = 1500
                     
-                    // Step 3: Perform the actual TLS Handshake
-                    sslSocket.startHandshake()
+                    // ۴. حالا که همه چیز تنظیم شد، Handshake را شروع کن
+                    upgradedSslSocket.startHandshake()
 
                     // Step 4: Measure accurate elapsed time up to successful TLS Handshake completion
                     // This excludes the warm-up response delay from the final ping latency to ensure accuracy.
