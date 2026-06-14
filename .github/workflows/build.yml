@@ -25,25 +25,31 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+
+    - name: Install Dependencies
+      run: npm install
+
+    - name: Create Assets Directory
+      run: mkdir -p android/app/src/main/assets
+
+    - name: Bundle React Native Code
+      run: |
+        npx react-native bundle --platform android --dev false --entry-file index.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res
+
     - name: Make Gradlew Executable
-      # Since the root workspace hosts the full-stack setup, chmod the gradlew executable inside the android subdirectory
       run: chmod +x android/gradlew
 
-    - name: Clean and Build APKs (Debug and Release)
+    - name: Clean and Build APKs
       working-directory: android
       run: ./gradlew clean assembleDebug assembleRelease
-
-    - name: List Build Outputs (Diagnostics)
-      if: always()
-      run: |
-        echo "=== Listing all files in android/app/build ==="
-        find android/app/build -type f 2>/dev/null || echo "No files found in build/"
-        echo "=== Listing all files under android/app/build/outputs ==="
-        find android/app/build/outputs -type f 2>/dev/null || echo "No files found in outputs/"
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
         name: NetChecker-APKs
         path: android/app/build/outputs/apk/**/*.apk
-
