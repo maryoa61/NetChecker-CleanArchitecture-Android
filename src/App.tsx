@@ -294,6 +294,7 @@ export default function App() {
   const [remarksInput, setRemarksInput] = useState("");
   const [configInput, setConfigInput] = useState("");
   const [isAddingProxy, setIsAddingProxy] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   // Export Client States
   const [exportFormat, setExportFormat] = useState<"V2RAY" | "CLASH" | "SUBSCRIPTION">("V2RAY");
@@ -489,10 +490,53 @@ export default function App() {
     e.preventDefault();
     if (!configInput) return;
 
+    const trimmed = configInput.trim();
+    
+    // Regular expression or schema checks for valid protocol schemas
+    if (!trimmed.startsWith("vless://") && !trimmed.startsWith("vmess://") && !trimmed.startsWith("trojan://")) {
+      const errMsg = "Invalid protocol format: Configuration must start with vless://, vmess://, or trojan://";
+      setValidationError(errMsg);
+      alert(errMsg);
+      return;
+    }
+
+    if (trimmed.startsWith("vless://") || trimmed.startsWith("trojan://")) {
+      const protocol = trimmed.startsWith("vless://") ? "vless://" : "trojan://";
+      const rest = trimmed.substring(protocol.length);
+      
+      // Rigorous Regex check for credentials@host:port
+      const uriRegex = /^[^@\s]+@[^@:\s]+:\d+/;
+      if (!uriRegex.test(rest)) {
+        const errMsg = "Invalid URI format: Missing credentials, host, or port. Expected: protocol://credentials@host:port";
+        setValidationError(errMsg);
+        alert(errMsg);
+        return;
+      }
+    } else if (trimmed.startsWith("vmess://")) {
+      const b64 = trimmed.substring(8).trim();
+      const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
+      if (!b64 || !base64Regex.test(b64)) {
+        const errMsg = "Invalid VMess format: Must contain a valid Base64 string payload.";
+        setValidationError(errMsg);
+        alert(errMsg);
+        return;
+      }
+      try {
+        const decoded = atob(b64);
+        JSON.parse(decoded);
+      } catch (err) {
+        const errMsg = "Invalid VMess payload: Base64 decoding failed or JSON schema is invalid.";
+        setValidationError(errMsg);
+        alert(errMsg);
+        return;
+      }
+    }
+
+    setValidationError(null);
+
     let finalRemarks = remarksInput || "Optimized-Gate";
     let finalConfig = configInput;
 
-    const trimmed = configInput.trim();
     const isUri = trimmed.startsWith("vless://") || trimmed.startsWith("vmess://") || trimmed.startsWith("trojan://");
 
     if (isUri) {
@@ -1409,7 +1453,10 @@ export default function App() {
                                 type="text" 
                                 placeholder="e.g. HK CDN Gateway"
                                 value={remarksInput}
-                                onChange={(e) => setRemarksInput(e.target.value)}
+                                onChange={(e) => {
+                                  setRemarksInput(e.target.value);
+                                  setValidationError(null);
+                                }}
                                 className="w-full bg-[#050505] border border-[#ff00ff]/30 rounded-none px-2 py-1 text-[10px] text-white focus:outline-none focus:border-[#ff00ff] font-mono"
                               />
                             </div>
@@ -1419,10 +1466,18 @@ export default function App() {
                                 type="text" 
                                 placeholder="vless://cf-bypass-node@1.1.1.1:443"
                                 value={configInput}
-                                onChange={(e) => setConfigInput(e.target.value)}
+                                onChange={(e) => {
+                                  setConfigInput(e.target.value);
+                                  setValidationError(null);
+                                }}
                                 className="w-full bg-[#050505] border border-[#ff00ff]/30 rounded-none px-2 py-1 text-[10px] text-white focus:outline-none focus:border-[#ff00ff] font-mono"
                               />
                             </div>
+                            {validationError && (
+                              <div className="bg-red-950/45 border border-red-500/60 p-2 text-[8px] text-red-400 font-mono tracking-wide leading-relaxed">
+                                [WARNING] {validationError}
+                              </div>
+                            )}
                             <button
                               type="submit"
                               className="w-full bg-gradient-to-r from-[#ff00ff]/80 to-[#ff00ff] hover:from-[#ff00ff] hover:to-[#ff00ff]/90 text-black py-1 rounded-none font-bold text-[9px] uppercase tracking-widest transition duration-150"
