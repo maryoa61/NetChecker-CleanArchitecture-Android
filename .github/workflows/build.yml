@@ -3,53 +3,43 @@ name: Android CI Build
 on:
   push:
     branches: [ "main", "master", "develop" ]
-  pull_request:
-    branches: [ "main", "master", "develop" ]
   workflow_dispatch:
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install Dependencies
+      run: npm install
+
+    - name: Build Web Project (Vite)
+      run: npm run build
+
+    - name: Sync Web Assets to Android
+      run: |
+        mkdir -p android/app/src/main/assets
+        cp -r dist/* android/app/src/main/assets/
 
     - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
         java-version: '17'
         distribution: 'temurin'
-        cache: gradle
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-        cache: 'npm'
-
-    - name: Install Dependencies
-      run: npm install
-
-    - name: Create Assets Directory
-      run: mkdir -p android/app/src/main/assets
-
-    - name: Bundle React Native Code
-      run: |
-        npx react-native bundle --platform android --dev false --entry-file index.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res
-
-    - name: Make Gradlew Executable
-      run: chmod +x android/gradlew
-
-    - name: Clean and Build APKs
+    - name: Build APK
       working-directory: android
-      run: ./gradlew clean assembleDebug assembleRelease
+      run: chmod +x gradlew && ./gradlew assembleRelease
 
-    - name: Upload APK Artifact
+    - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: NetChecker-APKs
-        path: android/app/build/outputs/apk/**/*.apk
+        name: NetChecker-APK
+        path: android/app/build/outputs/apk/release/*.apk
